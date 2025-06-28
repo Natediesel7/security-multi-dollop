@@ -17,7 +17,7 @@ jobs:
     - name: Configure AWS credentials (OIDC)
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: arn:aws:iam::931149495318:role/Github-Actions-AWS-All-Regions-Get-Default-VPCS
+        role-to-assume: arn:aws:iam::<aws-account-id>:role/<iam-role>
         aws-region: us-east-1
 
     - name: Install dependencies
