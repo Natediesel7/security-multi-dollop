@@ -1,0 +1,27 @@
+name: AWS All Region Get Default VPCs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  all-region-default-vpc-check:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for OIDC
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: arn:aws:iam::931149495318:role/Github-Actions-AWS-All-Regions-Get-Default-VPCS
+        aws-region: us-east-1
+
+    - name: Install dependencies
+      run: pip install boto3
+
+    - name: Run VPC check script
+      run: python aws.all.region.default.vpc.check.py
