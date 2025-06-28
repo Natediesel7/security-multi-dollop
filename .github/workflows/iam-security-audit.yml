@@ -1,0 +1,46 @@
+name: AWS IAM Security Audit HTML Report
+
+on:
+  workflow_dispatch:
+
+jobs:
+  scan-iam:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Cloudsplaining
+        run: pip install cloudsplaining
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<aws-account-id>:role/<role-name>
+          aws-region: us-east-1
+
+      - name: Download IAM data
+        run: |
+          mkdir -p audit/auth
+          cloudsplaining download --output .
+          mv default.json audit/auth/authorization-details.json
+
+      - name: Run IAM Risk Scan
+        run: |
+          cloudsplaining scan --input-file audit/auth/authorization-details.json --output audit/
+          cat audit/iam-report-authorization-details.html
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: iam-risk-report
+          path: audit/iam-report-authorization-details.html
