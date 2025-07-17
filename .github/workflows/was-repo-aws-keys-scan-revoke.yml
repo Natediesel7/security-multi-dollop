@@ -1,0 +1,72 @@
+name: Detect & Revoke AWS Keys
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Install Gitleaks (latest version)
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep tag_name | cut -d '"' -f 4)
+          VERSION_NUMBER=${GITLEAKS_VERSION#v}
+          echo "Installing Gitleaks $VERSION_NUMBER"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}/gitleaks_${VERSION_NUMBER}_linux_x64.tar.gz" -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # Run Gitleaks and detect AWS keys using regex
+      - name: Run Gitleaks Scan
+        id: gitleaks
+        run: |
+          echo "Scanning repository for secrets..."
+          gitleaks detect --source . --no-git --report-format json --report-path gitleaks-report.json || true
+          
+          if grep -qE 'AKIA[0-9A-Z]{16}' gitleaks-report.json; then
+            echo "AWS Access Key detected!"
+            echo "found=true" >> $GITHUB_ENV
+          else
+            echo "No AWS keys found."
+            echo "found=false" >> $GITHUB_ENV
+          fi
+
+      # Configure AWS credentials if leak found
+      - name: Configure AWS Credentials
+        if: ${{ env.found == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::<AWS_ACCOUNT_ID>:role/<AWS_ROLE_NAME>
+          aws-region: us-east-1
+
+      # Revoke leaked AWS key if detected
+      - name: Revoke Leaked Keys
+        if: ${{ env.found == 'true' }}
+        run: |
+          key_id=$(grep -oE 'AKIA[0-9A-Z]{16}' gitleaks-report.json | head -1)
+          if [ -n "$key_id" ]; then
+            echo "Revoking AWS Access Key: $key_id"
+            aws iam update-access-key --access-key-id $key_id --status Inactive --user-name <IAM_USER>
+          else
+            echo "No valid AWS key found in the report."
+          fi
+
+      # ✅ Fail workflow to block merge if AWS key was leaked
+      - name: Fail on AWS Key Leak
+        if: ${{ env.found == 'true' }}
+        run: |
+          echo "::error :: AWS Access Key found in repository! Key has been revoked."
+          exit 1
